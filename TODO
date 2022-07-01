@@ -1,0 +1,9 @@
+# TODO list
+- [ ] Query account info.
+
+## Osmosis
+- [ ] Create or read keyring.
+- [ ] Create send TX.
+- [ ] Create swap TX.
+- [ ] Get Pool info.
+- [ ] Find good path to make profit.
