@@ -14,6 +14,7 @@ var (
 )
 
 func init() {
+	// TODO: Remove me.
 	cfg := types.GetConfig()
 	cfg.SetBech32PrefixForAccount("osmo", "osmopub")
 	cfg.SetBech32PrefixForValidator("osmovaloper", "osmovaloperpub")

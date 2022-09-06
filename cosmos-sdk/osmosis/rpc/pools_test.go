@@ -1,4 +1,4 @@
-package osmosis
+package rpc
 
 import (
 	"fmt"
@@ -22,6 +22,7 @@ func TestNumPools(t *testing.T) {
 }
 
 func TestListPool(t *testing.T) {
+	// Request mock.
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
@@ -34,20 +35,22 @@ func TestListPool(t *testing.T) {
 		rpcURL+"/osmosis/gamm/v1beta1/pools?pagination.limit=1000",
 		httpmock.NewStringResponder(http.StatusOK, string(fixture)))
 
+	// Test
 	r := NewPoolClient(rpcURL)
 
-	pools, err := r.List()
+	pools, err := r.ListPool()
 
 	assert.Nil(t, err)
 
 	pool1, ok := pools["1"]
 
+	// Asserts
 	assert.True(t, ok)
 	assert.Equal(t, "1", pool1.ID)
 	assert.Equal(t, "osmo1mw0ac6rwlp5r8wapwk3zs6g29h8fcscxqakdzw9emkne6c8wjp9q0t3v8t", pool1.Address)
 	assert.Equal(t, 0.002, pool1.SwapFee)
 
-	assert.Equal(t, "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2", pool1.PoolAssets[0].Denom)
+	assert.Equal(t, "uatom", pool1.PoolAssets[0].Denom)
 	assert.Equal(t, "3370086542043", pool1.PoolAssets[0].Amount.String())
 	assert.Equal(t, "536870912000000", pool1.PoolAssets[0].Weight.String())
 

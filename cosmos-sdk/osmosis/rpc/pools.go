@@ -1,4 +1,4 @@
-package osmosis
+package rpc
 
 import (
 	"errors"
@@ -8,9 +8,19 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/rootwarp/cosmev/cosmos-sdk/osmosis/assets"
 	"github.com/rootwarp/cosmev/types"
 	"github.com/tendermint/tendermint/libs/json"
 )
+
+var (
+	assetListReader assets.AssetListReader
+)
+
+func init() {
+	assetListReader = assets.NewClient()
+	assetListReader.Fetch()
+}
 
 type listPoolResp struct {
 	Pools      []pool `json:"pools"`
@@ -60,7 +70,13 @@ func (p pool) Convert() (*types.Pool, error) {
 
 	for i, asset := range p.PoolAssets {
 		newPoolAsset := types.PoolAsset{}
-		newPoolAsset.Denom = asset.Token.Denom
+
+		d, err := assetListReader.Denom(asset.Token.Denom)
+		if err != nil {
+			continue
+		}
+
+		newPoolAsset.Denom = d.Unit()
 
 		amount, ok := new(big.Int).SetString(asset.Token.Amount, 10)
 		if !ok {
@@ -82,16 +98,13 @@ func (p pool) Convert() (*types.Pool, error) {
 	return &newPool, nil
 }
 
-// PoolReader defines interfaces for Pool.
-type PoolReader interface {
-	List() (map[string]*types.Pool, error)
-}
-
 type poolReader struct {
 	rpcURL string
 }
 
-func (r *poolReader) List() (map[string]*types.Pool, error) {
+func (r *poolReader) ListPool() (map[string]*types.Pool, error) {
+	log.Println("ListPool")
+
 	pools := map[string]*types.Pool{}
 
 	lastPaginationKey := ""
@@ -148,7 +161,7 @@ func httpQuery(path string) ([]byte, error) {
 }
 
 // NewPoolClient creates instance of Pool.
-func NewPoolClient(rpcURL string) PoolReader {
+func NewPoolClient(rpcURL string) types.DexReader {
 	return &poolReader{
 		rpcURL: rpcURL,
 	}

@@ -18,3 +18,8 @@ type PoolAsset struct {
 	Amount *big.Int
 	Weight *big.Int
 }
+
+// DexReader defines interfaces for DEX.
+type DexReader interface {
+	ListPool() (map[string]*Pool, error)
+}
