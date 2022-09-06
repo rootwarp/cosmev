@@ -1,22 +1,26 @@
 package osmosis
 
 import (
+	"errors"
 	"io"
+	"log"
+	"math/big"
 	"net/http"
+	"strconv"
 
+	"github.com/rootwarp/cosmev/types"
 	"github.com/tendermint/tendermint/libs/json"
 )
 
 type listPoolResp struct {
-	Pools      []Pool `json:"pools"`
+	Pools      []pool `json:"pools"`
 	Pagination struct {
 		NextKey string `json:"next_key"`
 		Total   string `json:"total"`
 	} `json:"pagination"`
 }
 
-// Pool is ...
-type Pool struct {
+type pool struct {
 	Type       string `json:"@type"`
 	Address    string `json:"address"`
 	ID         string `json:"id"`
@@ -27,12 +31,12 @@ type Pool struct {
 	} `json:"poolParams"`
 	FuturePoolGovernor string `json:"future_pool_governor"`
 	TotalShares        struct {
-		Demon  string `json:"demon"`
+		Denom  string `json:"denom"`
 		Amount string `json:"amount"`
 	} `json:"totalShares"`
 	PoolAssets []struct {
 		Token struct {
-			Demon  string `json:"demon"`
+			Denom  string `json:"denom"`
 			Amount string `json:"amount"`
 		} `json:"token"`
 		Weight string `json:"weight"`
@@ -40,17 +44,55 @@ type Pool struct {
 	TotalWeight string `json:"totalWeight"`
 }
 
-// PoolReader is ...
+func (p pool) Convert() (*types.Pool, error) {
+	newPool := types.Pool{
+		ID:         p.ID,
+		Address:    p.Address,
+		PoolAssets: make([]types.PoolAsset, len(p.PoolAssets)),
+	}
+
+	swapFee, err := strconv.ParseFloat(p.PoolParams.SwapFee, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	newPool.SwapFee = swapFee
+
+	for i, asset := range p.PoolAssets {
+		newPoolAsset := types.PoolAsset{}
+		newPoolAsset.Denom = asset.Token.Denom
+
+		amount, ok := new(big.Int).SetString(asset.Token.Amount, 10)
+		if !ok {
+			return nil, errors.New("can't parse amount value")
+		}
+
+		newPoolAsset.Amount = amount
+
+		weight, ok := new(big.Int).SetString(asset.Weight, 10)
+		if !ok {
+			return nil, errors.New("can't parse weight value")
+		}
+
+		newPoolAsset.Weight = weight
+
+		newPool.PoolAssets[i] = newPoolAsset
+	}
+
+	return &newPool, nil
+}
+
+// PoolReader defines interfaces for Pool.
 type PoolReader interface {
-	List() (map[string]Pool, error)
+	List() (map[string]*types.Pool, error)
 }
 
 type poolReader struct {
 	rpcURL string
 }
 
-func (r *poolReader) List() (map[string]Pool, error) {
-	pools := map[string]Pool{}
+func (r *poolReader) List() (map[string]*types.Pool, error) {
+	pools := map[string]*types.Pool{}
 
 	lastPaginationKey := ""
 	for {
@@ -72,7 +114,13 @@ func (r *poolReader) List() (map[string]Pool, error) {
 
 		lastPaginationKey = respData.Pagination.NextKey
 		for _, p := range respData.Pools {
-			pools[p.ID] = p
+			parsePool, err := p.Convert()
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			pools[p.ID] = parsePool
 		}
 
 		if respData.Pagination.NextKey == "" {
