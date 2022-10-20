@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"math/big"
 )
 
@@ -10,6 +11,17 @@ type Pool struct {
 	Address    string
 	SwapFee    float64
 	PoolAssets []PoolAsset
+}
+
+// FindPoolAssetByDenom searchs request denom and reset PoolAsset.
+func (p Pool) FindPoolAssetByDenom(denom string) (int, *PoolAsset, error) {
+	for i, asset := range p.PoolAssets {
+		if asset.Denom == denom {
+			return i, &asset, nil
+		}
+	}
+
+	return -1, nil, fmt.Errorf("asset %s is not exist in this pool", denom)
 }
 
 // PoolAsset defines detail asset informations from pool.

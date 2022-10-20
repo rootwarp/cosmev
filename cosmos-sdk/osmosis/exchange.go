@@ -102,40 +102,32 @@ func (e *osmosisExchanger) Swap(tokenIn types.Asset, routes []types.Pool, minTok
 		},
 	}
 
-	txMsg, err := e.signTx(in, wrapRoutes, minTokenOutAmount)
+	// TODO:
+	fees := sdk.Coins{{Amount: sdk.NewInt(1250), Denom: "uosmo"}}
+	txMsg, err := e.signTx(in, wrapRoutes, minTokenOutAmount, 250000, fees)
 
-	fmt.Println("Final Tx Msg", txMsg)
+	fmt.Println("Final Tx Msg", string(txMsg))
 
-	cli := http.Client{}
+	err = e.sendTx(txMsg)
 
-	//url := "https://osmosis-mainnet-rpc.allthatnode.com:26657"
-	//url := "https://rpc-osmosis.keplr.app"
-	url := "https://osmosis-rpc.polkachu.com"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader([]byte(txMsg)))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println(resp.StatusCode)
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println(string(data))
+	fmt.Println(err)
 
 	return nil, err
 }
 
-func (e *osmosisExchanger) signTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRoute, minTokenOutAmount int64) (string, error) {
+// TODO:
+func (e *osmosisExchanger) createTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRoute, minTokenOutAmount int64) (string, error) {
+	return "", nil
+}
+
+func (e *osmosisExchanger) signTx(
+	tokenIn sdk.Coin,
+	routes []osmo.SwapAmountInRoute,
+	minTokenOutAmount int64,
+	gasLimit uint64,
+	fees sdk.Coins,
+) ([]byte, error) {
+
 	ifRegistry := codecType.NewInterfaceRegistry()
 	osmo.RegisterInterfaces(ifRegistry)
 
@@ -153,14 +145,12 @@ func (e *osmosisExchanger) signTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRo
 
 	txBuilder.SetMsgs(&swapIn)
 	txBuilder.SetMemo("")
-	txBuilder.SetGasLimit(250000) // TODO: Gas
+	txBuilder.SetGasLimit(gasLimit)
 	txBuilder.SetTimeoutHeight(0)
-	txBuilder.SetFeeAmount(
-		sdk.Coins{{Amount: sdk.NewInt(0), Denom: "uosmo"}}, // TODO: Amount
-	)
+	txBuilder.SetFeeAmount(fees)
 
 	jsonByte, err := txConfig.TxJSONEncoder()(txBuilder.GetTx())
-	fmt.Println("Json", string(jsonByte), err)
+	fmt.Println("JSON Msg ", string(jsonByte), err)
 
 	signerData := signing.SignerData{
 		ChainID:       "osmosis-1",
@@ -188,7 +178,7 @@ func (e *osmosisExchanger) signTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRo
 	// Signing here.
 	sig, _, err := e.kr.Sign("swap", byteToSign)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Set Signature
@@ -208,12 +198,12 @@ func (e *osmosisExchanger) signTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRo
 
 	txBytes, err := txConfig.TxEncoder()(txBuilder.GetTx())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	rawTx, err := tmjson.Marshal(txBytes)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	rawMsg := map[string]json.RawMessage{}
@@ -221,7 +211,7 @@ func (e *osmosisExchanger) signTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRo
 
 	rawParam, err := json.Marshal(rawMsg)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	rpcMsg := struct {
@@ -238,10 +228,92 @@ func (e *osmosisExchanger) signTx(tokenIn sdk.Coin, routes []osmo.SwapAmountInRo
 
 	msg, err := json.Marshal(rpcMsg)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return string(msg), nil
+	return msg, nil
+}
+
+func (e *osmosisExchanger) sendTx(txMsg []byte) error {
+	cli := http.Client{}
+
+	// TODO
+	//url := "https://osmosis-mainnet-rpc.allthatnode.com:26657"
+	//url := "https://rpc-osmosis.keplr.app"
+	url := "https://osmosis-rpc.polkachu.com"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(txMsg))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(resp.StatusCode)
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(data))
+
+	return nil
+}
+
+// TODO: Refactoring
+type direction int
+
+const (
+	pathIn direction = iota
+	pathOut
+)
+
+func (e *osmosisExchanger) convert(pools []types.Pool, inDenom string) ([]osmo.SwapAmountInRoute, error) {
+	// TODO: Check len(pools)
+
+	type swapflow struct {
+		In  string
+		Out string
+	}
+
+	flows := make([]swapflow, len(pools))
+
+	// Start.
+
+	first := pools[0]
+	firstFlow := make([]direction, len(first.PoolAssets))
+
+	curInDenom := inDenom
+	for i, poolAsset := range first.PoolAssets {
+		_, _, err := first.FindPoolAssetByDenom(inDenom)
+		if err != nil {
+			return nil, err
+		}
+
+		if poolAsset.Denom == inDenom {
+			firstFlow[i] = pathIn
+		} else {
+			firstFlow[i] = pathOut
+			curInDenom = poolAsset.Denom
+		}
+	}
+
+	//poolAsset, err := first.FindPoolAssetByDenom(inDenom)
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	//flows[0].In = poolAsset.Denom
+
+	_ = flows
+	_ = err
+
+	return nil, nil
 }
 
 // NewExchanger returns DexExchanger instance.
